@@ -157,6 +157,7 @@ def policy_evaluation(model: GridWorld, val_, policy):
         # which is used to determine the convergence of policy evaluation.    #
         #######################################################################
         # v = R + gamma (P @ v)
+        # P (101, 101, 4) -> (101, 101) picking channel per row by policy (101, 1).
         P_pi = model.P[np.arange(model.num_states)[:, None], :, policy][:, 0][0]  # TODO: check indexing.
         new_vals = model.R + model.gamma * (P_pi @ val_[:, 0])
         delta = np.abs(new_vals - val_).max()
