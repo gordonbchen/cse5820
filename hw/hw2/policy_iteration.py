@@ -1,5 +1,5 @@
 import numpy as np
-from env.grid_world import GridWorld
+from rl_env.grid_world import GridWorld
 from algorithms.dynamic_programming import policy_iteration
 from utils.plots import plot_gridworld
 
