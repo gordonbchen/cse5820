@@ -1,4 +1,5 @@
 import numpy as np
+from rl_env.grid_world import GridWorld
 
 # global stopping criteria
 EPS = 0.001
@@ -40,14 +41,10 @@ def value_iteration(model, maxiter=100):
         # delta stores the maximum value change after update over all states, #
         # which is used to determine the convergence of VI.                   #
         #######################################################################
-
-
-
-
-
-
-
-
+        q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
+        new_values = q.max(axis=-1, keepdims=True)
+        delta = np.abs(new_values - val_).max()
+        val_ = new_values
         #######################################################################
         #                       END OF YOUR CODE                              #
         #######################################################################
@@ -63,17 +60,15 @@ def value_iteration(model, maxiter=100):
     # Compute the optimal policy from value function                    #
     # i.e., update pi from val_                                         #
     #####################################################################
-
-
-
-
+    q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
+    pi = q.argmax(axis=-1)
     #####################################################################
     #                       END OF YOUR CODE                            #
     #####################################################################
 
     return val_, pi
 
-def policy_iteration(model, maxiter):
+def policy_iteration(model: GridWorld, maxiter):
     """
     Solves the supplied environment with policy iteration.
 
@@ -96,7 +91,7 @@ def policy_iteration(model, maxiter):
         Optimal policy of the environment.
     """
     # initialize the value function and policy
-    pi = np.ones((model.num_states, 1))
+    pi = np.ones((model.num_states, 1), dtype=np.int64)
     val_ = np.zeros((model.num_states, 1))
 
     for i in range(maxiter):
@@ -111,14 +106,11 @@ def policy_iteration(model, maxiter):
         # Set "stable_policy" to False, if there is any policy update over    #
         # all states, which is used to determine the convergence of PI.       #
         #######################################################################
-
-
-
-
-
-
-
-
+        # q = R + gamma * (P @ v)
+        q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
+        new_policy = q.argmax(axis=-1)
+        stable_policy = (pi == new_policy).all()
+        pi = new_policy
         #######################################################################
         #                       END OF YOUR CODE                              #
         #######################################################################
@@ -130,7 +122,7 @@ def policy_iteration(model, maxiter):
 
     return val_, pi
 
-def policy_evaluation(model, val_, policy):
+def policy_evaluation(model: GridWorld, val_, policy):
     """
     Evaluates a given policy.
 
@@ -164,15 +156,11 @@ def policy_evaluation(model, val_, policy):
         # delta stores the maximum value change after update over all states, #
         # which is used to determine the convergence of policy evaluation.    #
         #######################################################################
-
-
-
-
-
-
-
-
-
+        # v = R + gamma (P @ v)
+        P_pi = model.P[np.arange(model.num_states)[:, None], :, policy][:, 0][0]  # TODO: check indexing.
+        new_vals = model.R + model.gamma * (P_pi @ val_[:, 0])
+        delta = np.abs(new_vals - val_).max()
+        val_ = new_vals
         #######################################################################
         #                       END OF YOUR CODE                              #
         #######################################################################
