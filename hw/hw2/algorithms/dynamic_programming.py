@@ -4,6 +4,14 @@ from rl_env.grid_world import GridWorld
 # global stopping criteria
 EPS = 0.001
 
+def compute_qvalues(R: np.ndarray, gamma: float, P: np.ndarray, values: np.ndarray):
+    """
+    R is (n_states, 1). P is (n_states, n_states, n_actions). values is (n_states, 1).
+    Returns q-values: (n_states, n_actions).
+    """
+    # (n_states, n_states, n_actions) x (n_states,) -> (n_states, n_actions).
+    return R + gamma * np.tensordot(P, values[:, 0], axes=(1, 0))
+
 def value_iteration(model, maxiter=100):
     """
     Solves the supplied environment with value iteration.
@@ -41,7 +49,7 @@ def value_iteration(model, maxiter=100):
         # delta stores the maximum value change after update over all states, #
         # which is used to determine the convergence of VI.                   #
         #######################################################################
-        q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
+        q = compute_qvalues(model.R, model.gamma, model.P, val_)
         new_values = q.max(axis=-1, keepdims=True)
         delta = np.abs(new_values - val_).max()
         val_ = new_values
@@ -60,7 +68,6 @@ def value_iteration(model, maxiter=100):
     # Compute the optimal policy from value function                    #
     # i.e., update pi from val_                                         #
     #####################################################################
-    q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
     pi = q.argmax(axis=-1)
     #####################################################################
     #                       END OF YOUR CODE                            #
@@ -106,7 +113,7 @@ def policy_iteration(model: GridWorld, maxiter):
         # Set "stable_policy" to False, if there is any policy update over    #
         # all states, which is used to determine the convergence of PI.       #
         #######################################################################
-        q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
+        q = compute_qvalues(model.R, model.gamma, model.P, val_)
         new_policy = q.argmax(axis=-1, keepdims=True)
         stable_policy = (pi == new_policy).all()
         pi = new_policy
@@ -155,7 +162,7 @@ def policy_evaluation(model: GridWorld, val_, policy):
         # delta stores the maximum value change after update over all states, #
         # which is used to determine the convergence of policy evaluation.    #
         #######################################################################
-        q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
+        q = compute_qvalues(model.R, model.gamma, model.P, val_)
         new_vals = q[np.arange(q.shape[0]), policy[:, 0]][:, None]
         delta = np.abs(new_vals - val_).max()
         val_ = new_vals
