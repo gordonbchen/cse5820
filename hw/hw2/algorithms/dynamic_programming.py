@@ -106,9 +106,8 @@ def policy_iteration(model: GridWorld, maxiter):
         # Set "stable_policy" to False, if there is any policy update over    #
         # all states, which is used to determine the convergence of PI.       #
         #######################################################################
-        # q = R + gamma * (P @ v)
         q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
-        new_policy = q.argmax(axis=-1)
+        new_policy = q.argmax(axis=-1, keepdims=True)
         stable_policy = (pi == new_policy).all()
         pi = new_policy
         #######################################################################
@@ -156,10 +155,8 @@ def policy_evaluation(model: GridWorld, val_, policy):
         # delta stores the maximum value change after update over all states, #
         # which is used to determine the convergence of policy evaluation.    #
         #######################################################################
-        # v = R + gamma (P @ v)
-        # P (101, 101, 4) -> (101, 101) picking channel per row by policy (101, 1).
-        P_pi = model.P[np.arange(model.num_states)[:, None], :, policy][:, 0][0]  # TODO: check indexing.
-        new_vals = model.R + model.gamma * (P_pi @ val_[:, 0])
+        q = model.R + model.gamma * np.tensordot(model.P, val_[:, 0], axes=(1, 0))  # (101, 101, 4) x (101,) -> (101, 4).
+        new_vals = q[np.arange(q.shape[0]), policy[:, 0]][:, None]
         delta = np.abs(new_vals - val_).max()
         val_ = new_vals
         #######################################################################
