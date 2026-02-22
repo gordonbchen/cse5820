@@ -74,9 +74,8 @@ def sarsa(model, alpha=0.5, min_epsilon=0.1, maxiter=100, maxeps=1000):
             # TODO1:                                                              #
             # Update Q function with SARSA backup                                 #
             #######################################################################
-
-
-
+            td_target = model.R[state] + model.gamma * Q[next_state, next_action]
+            Q[state, action] += alpha * (td_target - Q[state, action])
             #######################################################################
             #                       END OF YOUR CODE                              #
             #######################################################################
@@ -96,9 +95,7 @@ def sarsa(model, alpha=0.5, min_epsilon=0.1, maxiter=100, maxeps=1000):
     # TODO2:                                                              #
     # Determine policy pi from Q function                                 #
     #######################################################################
-
-
-
+    pi = Q.argmax(axis=-1)
     #######################################################################
     #                       END OF YOUR CODE                              #
     #######################################################################
@@ -174,9 +171,8 @@ def qlearning(model, alpha=0.5, min_epsilon=0.1, maxiter=100, maxeps=1000):
             # TODO3:                                                              #
             # Update Q function with Q-learning backup                            #
             #######################################################################
-
-
-
+            td_target = model.R[state] + model.gamma * Q[next_state].max()
+            Q[state, action] += alpha * (td_target - Q[state, action])
             #######################################################################
             #                       END OF YOUR CODE                              #
             #######################################################################
@@ -194,9 +190,7 @@ def qlearning(model, alpha=0.5, min_epsilon=0.1, maxiter=100, maxeps=1000):
     # TODO4:                                                              #
     # Determine policy pi from Q function                                 #
     #######################################################################
-
-
-
+    pi = Q.argmax(axis=-1)
     #######################################################################
     #                       END OF YOUR CODE                              #
     #######################################################################
