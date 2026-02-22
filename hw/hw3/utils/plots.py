@@ -50,7 +50,7 @@ def plot_gridworld(model, value_function=None, policy=None, state_counts=None, t
     if path is not None:
         plt.savefig(path, dpi=300, bbox_inches='tight')
 
-    plt.show()
+    # plt.show()
 
 def add_value_function(model, value_function, name):
 
