@@ -8,4 +8,4 @@ scikit-image
 opencv-python==4.5.5.64
 torch==1.5.0
 torchvision==0.6.0
-PyQt5==5.9.2
+PyQt5
