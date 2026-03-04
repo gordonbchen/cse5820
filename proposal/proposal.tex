@@ -3,6 +3,9 @@
 \usepackage{hyperref}
 \usepackage{url}
 
+\usepackage[table]{xcolor}
+\usepackage{colortbl}
+
 
 \title{Learning to Teach}
 
@@ -33,7 +36,7 @@ miscalibrated for the user's knowledge level, and in general serve the role of a
 than that of a teacher who knows how to help a student along.
 
 While it's not fair to blame LLMs for lazy students just getting the answer from LLMs, it is a problem
-that we as model developers can address when students that want to learn are deprived of the ability
+that model developers can address when students that want to learn are deprived of the ability
 to struggle through a problem when an LLM gives them the solution immediately instead of nudging them
 in the right direction.
 
@@ -54,9 +57,12 @@ By evaluating the student on similar problems the teacher has never seen, we pre
 giving the student the answer and calling it a day because the teacher's answer must help the student
 generalize to the similar questions.
 
-An additional feature I could explore if I have time would be multi-turn interactions between the teacher
-and the student. Instead of just giving feedback a single time, the student would generate a solution,
-the teacher would give feedback, the student would do a similar problem with the feedback, and repeat.
+If all goes well and I have time, I would like to explore multi-turn interactions between
+the teacher and the student. Instead of just giving feedback a single time, the student would generate
+a solution, the teacher would give feedback, the student would do a similar problem with the feedback,
+and the whole process would repeat. I think that this would be a more valuable task to train on because
+in the real world, teachers help students multiple times, correcting their mistakes as they come up in
+different questions.
 
 \section{Importance}
 This is an important project because as LLMs are getting smarter, their potential to become
@@ -69,6 +75,18 @@ shows that reinforcement learning can teach LLMs to be really good teachers, and
 low hanging fruit in terms of making them effective teachers.
 
 \section{Expected Results}
+I hope to see that fine-tuning the teacher with my proposed pipeline improves the student's ability
+to answer questions correctly. This would show that the teacher is learning to teach the student better
+and better, learning to identify what the student is doing wrong and telling them how to correct their behavior.
+I would be able to see this by there being a large difference between the student's accuracy with and without
+the teacher's feedback.
+
+I also hope to be able to identify higher-level teaching methods that the teacher LLM learns to use.
+For example, perhaps the Socratic style of asking the student questions might emerge from training,
+or perhaps the teacher might learn some other more effective way to elicit correct problem-solving behavior
+from students. If I could identify the teaching methods that the teacher LLM learns are most useful,
+then in my own prompting I could use those teaching methods to more effectively teach LLMs skills in-context.
+I also wonder if the methods the teacher LLM uses can be applied to teaching humans as well.
 
 \section{Data}
 I plan on synthetically generating a dataset with multiple concepts and multiple questions per concept.
@@ -93,6 +111,41 @@ student LLM, as well as a question writing model, although perhaps some problems
 generated with substitution instead of with another LLM.
 
 \section{Schedule and Milestones}
+\begin{tabular}{ |c|c|c| } 
+ \hline
+ 3/6 & \cellcolor{red} Proposal due & \\
+ \hline
+
+ Week of 3/13 & &\\
+ \hline
+ Week of 3/20 & &\\
+ \hline
+
+ 3/20 & \cellcolor{red} Midpoint check & 4-page report: progress + issues\\
+ \hline
+
+ Week of 3/27 & &\\
+ \hline
+ Week of 4/3 & &\\
+ \hline
+ Week of 4/10 & &\\
+ \hline
+ Week of 4/17 & &\\
+ \hline
+ Week of 4/24 & &\\
+ \hline
+
+ 4/23 - 4/30 & \cellcolor{red} Presentation & 15-min presentation: problem formulation, algorithms, results, demo \\
+ \hline
+
+ Week of 5/1 & &\\
+ \hline
+ Week of 5/8 & &\\
+ \hline
+
+ 5/8 & \cellcolor{red} Final report & 6-page report: problem formulation, algs, results. \\
+ \hline
+\end{tabular}
 
 \subsubsection*{Acknowledgments}
 \subsubsection*{References}
