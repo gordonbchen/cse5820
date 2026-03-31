@@ -45,7 +45,7 @@ class Agent_PG(Agent):
         
         if args.test_pg:
             print('loading trained model')
-            self.model = torch.load(args.model_name)
+            self.model = torch.load(args.model_name, weights_only=False)
             self.hyper_param = args.__dict__
             self.last_frame = None
 
@@ -174,11 +174,6 @@ class Agent_PG(Agent):
             if total_reward > best_reward:
                 best_reward = total_reward
                 torch.save(self.model, save_dir / "best.pt")
-
-        # TODO: remove plot.
-        import matplotlib.pyplot as plt
-        plt.plot(self.episode_rewards)
-        plt.savefig(save_dir / "rewards.png")
 
         torch.save(self.model, save_dir / "final.pt")
         #############################################################
