@@ -1,3 +1,4 @@
+from pathlib import Path
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -62,14 +63,24 @@ class Agent_PG(Agent):
                 nn.Linear(256, 1),
                 nn.Sigmoid()
             ).to(device)
+
+            self.critic = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(80*80*1, 256),
+                nn.ReLU(),
+                nn.Linear(256, 1),
+            ).to(device)
                 
             # initial optimizer
             if self.hyper_param['optim'] == 'Adam':
                 self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hyper_param['learning_rate'], betas=(0.9, 0.999))
+                self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=self.hyper_param['learning_rate'], betas=(0.9, 0.999))
             elif self.hyper_param['optim'] == 'RMSprop':
                 self.optimizer = torch.optim.RMSprop(self.model.parameters(), lr = self.hyper_param['learning_rate'], alpha = 0.9)
+                self.critic_optimizer = torch.optim.RMSprop(self.critic.parameters(), lr=self.hyper_param['learning_rate'], alpha=0.9)
             elif self.hyper_param['optim'] == 'SGD':
                 self.optimizer = torch.optim.SGD(self.model.parameters(), lr = self.hyper_param['learning_rate'])
+                self.critic_optimizer = torch.optim.SGD(self.critic.parameters(), lr=self.hyper_param['learning_rate'])
             else:
                 print("Unknown Optimizer!")
                 exit()
@@ -88,14 +99,18 @@ class Agent_PG(Agent):
         N_EPISODES = self.hyper_param['episode']
         EPS = 1e-9
 
+        save_dir = Path("runs") / self.hyper_param['model_name']
+        save_dir.mkdir(parents=True, exist_ok=True)
+
         #############################################################
         # YOUR CODE HERE                                            #
         # At the end of train, you need to save your model for test #
         #############################################################
         total_time = 0
+        best_reward = -float("inf")
         for episode in range(N_EPISODES):
             t0 = time.time()
-            log_probs, rewards = [], []
+            log_probs, rewards, values = [], [], []
             self.init_game_setting()
             obs = self.env.reset()
             while True:
@@ -110,6 +125,8 @@ class Agent_PG(Agent):
                 action, prob3 = self.policy(obs, test=False)
                 prob = prob3 if action == 3 else 1 - prob3
                 log_probs.append((prob + EPS).log())
+
+                values.append(self.critic(obs))
 
                 obs, reward, terminated, _ = self.env.step(action)
                 rewards.append(reward)
@@ -127,32 +144,43 @@ class Agent_PG(Agent):
                     rewards[i] += GAMMA * rewards[i+1]
             rewards = torch.tensor(rewards, dtype=torch.float32, device=device)
 
-            # Reward normalization.
-            rewards = (rewards - rewards.mean()) / (rewards.std() + EPS)
+            # Compute advantages.
+            values = torch.cat(values, dim=1)[0]
+            advantages = rewards - values.detach()
+            advantages = (advantages - advantages.mean()) / (advantages.std() + EPS)
 
+            # Optimize policy.
             log_probs = torch.cat(log_probs, dim=1)[0]
-
-            # Compute loss and optimize.
-            loss = (-log_probs * rewards).sum()
+            policy_loss = (-log_probs * advantages).sum()
 
             self.optimizer.zero_grad()
-            loss.backward()
+            policy_loss.backward()
             self.optimizer.step()
+
+            # Optimize critic.
+            critic_loss = F.mse_loss(values, rewards)
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic_optimizer.step()
 
             # Log.
             dt = time.time() - t0
             total_time += dt
             rem_time = ((N_EPISODES - episode) - 1) * total_time / ((episode + 1) * 60)
-            print(f"{episode}: reward={total_reward} steps={len(log_probs)} loss={loss.item():.5f}", end=" ")
+            print(f"{episode}: reward={total_reward} steps={len(log_probs)}", end=" ")
+            print(f"policy_loss={policy_loss.item():.5f}, critic_loss={critic_loss.item():.5f}", end=" ")
             print(f"dt={dt:.3f} rem_time={rem_time:.3f}")
+
+            if total_reward > best_reward:
+                best_reward = total_reward
+                torch.save(self.model, save_dir / "best.pt")
 
         # TODO: remove plot.
         import matplotlib.pyplot as plt
         plt.plot(self.episode_rewards)
-        plt.savefig(self.hyper_param["model_name"]+".png")
+        plt.savefig(save_dir / "rewards.png")
 
-        # Save model for test.
-        torch.save(self.model, self.hyper_param['model_name'])
+        torch.save(self.model, save_dir / "final.pt")
         #############################################################
         # END OF YOUR CODE HERE                                     #
         #############################################################
