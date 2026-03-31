@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 from agent.agent import Agent
 import numpy as np
+import time
 
 np.random.seed(1009)
 torch.cuda.manual_seed(1009)
@@ -28,7 +29,7 @@ def prepro(o, image_size=[80, 80]):
 
     # Resize and delete scoreboard.
     y = y.view(1, 1, *y.shape)
-    resized = F.interpolate(y, size=image_size, mode="area")[0]
+    resized = F.interpolate(y, size=image_size, mode="area")
 
     # import matplotlib.pyplot as plt
     # plt.imshow(resized[0, :, :, None].cpu().numpy(), cmap="grey")
@@ -55,6 +56,7 @@ class Agent_PG(Agent):
             
             # initial model
             self.model = nn.Sequential(
+                nn.Flatten(),
                 nn.Linear(80*80*1, 256),
                 nn.ReLU(),
                 nn.Linear(256, 1),
@@ -90,9 +92,10 @@ class Agent_PG(Agent):
         # YOUR CODE HERE                                            #
         # At the end of train, you need to save your model for test #
         #############################################################
+        total_time = 0
         for episode in range(N_EPISODES):
+            t0 = time.time()
             log_probs, rewards = [], []
-
             self.init_game_setting()
             obs = self.env.reset()
             while True:
@@ -104,7 +107,7 @@ class Agent_PG(Agent):
                     obs = cur_obs - self.last_frame
                 self.last_frame = cur_obs
 
-                action, prob3 = self.policy(obs.view(1, -1), test=False)
+                action, prob3 = self.policy(obs, test=False)
                 prob = prob3 if action == 3 else 1 - prob3
                 log_probs.append((prob + EPS).log())
 
@@ -136,7 +139,15 @@ class Agent_PG(Agent):
             loss.backward()
             self.optimizer.step()
 
-            print(episode, total_reward, len(log_probs))
+            dt = time.time() - t0
+            total_time += dt
+            rem_time = ((N_EPISODES - episode) - 1) * total_time / ((episode + 1) * 60)
+            print(f"{episode}: reward={total_reward} steps={len(log_probs)} dt={dt:.3f} rem_time={rem_time:.3f}")
+
+        # TODO: remove plot.
+        import matplotlib.pyplot as plt
+        plt.plot(self.episode_rewards)
+        plt.savefig(self.hyper_param["model_name"]+".png")
 
         # Save model for test.
         torch.save(self.model, self.hyper_param['model_name'])
@@ -179,7 +190,7 @@ class Agent_PG(Agent):
                 o = prepro(observation)
                 observation = o - self.last_frame
                 self.last_frame = o
-            output = self.model(observation.view(1, -1))
+            output = self.model(observation)
             probability = output[0,0]
             if np.random.rand() < probability.item():
                 action = 3
