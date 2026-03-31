@@ -1,0 +1,9 @@
+Please update this file accordingly, e.g., the train and test scripts, and remove the one you don't implement.
+
+TA/I will run your test script for evluation. If you use TensorFlow, please add pip install command here.
+
+
+For PG
+python3 main.py --train_pg --episode=5000 -lr=0.001 --model_name=pong
+
+python3 main.py --test_pg --model_name final.pt
