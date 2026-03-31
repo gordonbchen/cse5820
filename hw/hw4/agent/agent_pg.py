@@ -169,7 +169,7 @@ class Agent_PG(Agent):
             rem_time = ((N_EPISODES - episode) - 1) * total_time / ((episode + 1) * 60)
             print(f"{episode}: reward={total_reward} steps={len(log_probs)}", end=" ")
             print(f"policy_loss={policy_loss.item():.5f}, critic_loss={critic_loss.item():.5f}", end=" ")
-            print(f"dt={dt:.3f} rem_time={rem_time:.3f}")
+            print(f"dt={dt:.3f} rem_time={rem_time:.3f} total_time={total_time:.3f}")
 
             if total_reward > best_reward:
                 best_reward = total_reward
