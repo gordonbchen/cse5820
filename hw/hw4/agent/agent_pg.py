@@ -2,9 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from agent.agent import Agent
-from environment import Environment
 import numpy as np
-import skimage.transform
 
 np.random.seed(1009)
 torch.cuda.manual_seed(1009)
@@ -12,7 +10,7 @@ torch.manual_seed(1009)
 device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
 
-def prepro(o, image_size=[105, 80]):
+def prepro(o, image_size=[80, 80]):
     """
     Call this function to preprocess RGB image to grayscale image if necessary
     Input: 
@@ -21,10 +19,21 @@ def prepro(o, image_size=[105, 80]):
     Default return: np.array 
         Grayscale image, shape: (80, 80, 1)
     """
+    # Crop.
+    o = o[33:195]
 
-    y = 0.2126 * o[:, :, 0] + 0.7152 * o[:, :, 1] + 0.0722 * o[:, :, 2]   #gray scale
-    resized = skimage.transform.resize(y, image_size)[17:-8,:]            #delete score board
-    return np.expand_dims(resized.astype(np.float32), axis=2)             #shape (height, wodth) -> (1, height, wodth)
+    # Normalize and grayscale.
+    o = torch.tensor(o, dtype=torch.float32, device=device) / 255.0
+    y = 0.2126 * o[:, :, 0] + 0.7152 * o[:, :, 1] + 0.0722 * o[:, :, 2]
+
+    # Resize and delete scoreboard.
+    y = y.view(1, 1, *y.shape)
+    resized = F.interpolate(y, size=image_size, mode="area")[0]
+
+    # import matplotlib.pyplot as plt
+    # plt.imshow(resized[0, :, :, None].cpu().numpy(), cmap="grey")
+    # plt.show()
+    return resized
 
 
 class Agent_PG(Agent):
@@ -39,10 +48,9 @@ class Agent_PG(Agent):
             self.last_frame = None
 
         elif args.train_pg:
-            self.optimizer = ['Adam', 'RMSprop', 'SGD']
             self.hyper_param = args.__dict__
             self.argument = args
-            self.training_curve = []
+            self.episode_rewards = []
             self.last_frame = None
             
             # initial model
@@ -54,13 +62,12 @@ class Agent_PG(Agent):
             ).to(device)
                 
             # initial optimizer
-            if self.hyper_param['optim'] in self.optimizer:
-                if self.hyper_param['optim'] == 'Adam':
-                    self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hyper_param['learning_rate'], betas=(0.9, 0.999))
-                elif self.hyper_param['optim'] == 'RMSprop':
-                    self.optimizer = torch.optim.RMSprop(self.model.parameters(), lr = self.hyper_param['learning_rate'], alpha = 0.9)
-                elif self.hyper_param['optim'] == 'SGD':
-                    self.optimizer = torch.optim.SGD(self.model.parameters(), lr = self.hyper_param['learning_rate'])
+            if self.hyper_param['optim'] == 'Adam':
+                self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hyper_param['learning_rate'], betas=(0.9, 0.999))
+            elif self.hyper_param['optim'] == 'RMSprop':
+                self.optimizer = torch.optim.RMSprop(self.model.parameters(), lr = self.hyper_param['learning_rate'], alpha = 0.9)
+            elif self.hyper_param['optim'] == 'SGD':
+                self.optimizer = torch.optim.SGD(self.model.parameters(), lr = self.hyper_param['learning_rate'])
             else:
                 print("Unknown Optimizer!")
                 exit()
@@ -71,60 +78,68 @@ class Agent_PG(Agent):
         """
         self.last_frame = None
 
+    # @profile
     def train(self):
-        gamma = self.hyper_param['gamma']
-        batch = self.hyper_param['batch_size']
+        print(self.hyper_param)
+        GAMMA = self.hyper_param['gamma']
+        BATCH_SIZE = self.hyper_param['batch_size']
+        N_EPISODES = self.hyper_param['episode']
+        EPS = 1e-9
 
         #############################################################
         # YOUR CODE HERE                                            #
         # At the end of train, you need to save your model for test #
         #############################################################
-          
+        for episode in range(N_EPISODES):
+            log_probs, rewards = [], []
 
+            self.init_game_setting()
+            obs = self.env.reset()
+            while True:
+                # Preprocess and diff frames.
+                cur_obs = prepro(obs)
+                if self.last_frame is None:  # no motion, velocity = 0s.
+                    obs = torch.zeros_like(cur_obs)
+                else:
+                    obs = cur_obs - self.last_frame
+                self.last_frame = cur_obs
 
+                action, prob3 = self.policy(obs.view(1, -1), test=False)
+                prob = prob3 if action == 3 else 1 - prob3
+                log_probs.append((prob + EPS).log())
 
+                obs, reward, terminated, _ = self.env.step(action)
+                rewards.append(reward)
 
+                if terminated:
+                    break
 
+            # Calculate total rewards.
+            total_reward = sum(rewards)
+            self.episode_rewards.append(total_reward)
 
+            # Rewards to go, don't carry over points (b/c pong resets).
+            for i in range(len(rewards)-2, -1, -1):
+                if abs(rewards[i]) < 0.5:  # nonzero reward, abs < for fp comp.
+                    rewards[i] += GAMMA * rewards[i+1]
+            rewards = torch.tensor(rewards, dtype=torch.float32, device=device)
 
+            # Reward normalization.
+            rewards = (rewards - rewards.mean()) / (rewards.std() + EPS)
 
+            log_probs = torch.cat(log_probs, dim=1)[0]
 
+            # Compute loss and optimize.
+            loss = (-log_probs * rewards).sum()
 
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
+            print(episode, total_reward, len(log_probs))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        # Save model for test.
+        torch.save(self.model, self.hyper_param['model_name'])
         #############################################################
         # END OF YOUR CODE HERE                                     #
         #############################################################
@@ -137,8 +152,8 @@ class Agent_PG(Agent):
         Return predicted action of your agent
 
         Input:
-            observation: np.array
-                current RGB screen of game, shape: (210, 160, 3)
+            observation: torch.Tensor
+                preprocessed frame (pre-diff)
 
         Return:
             action: int
@@ -149,7 +164,6 @@ class Agent_PG(Agent):
         # https://gymnasium.farama.org/v0.28.0/environments/atari/pong/
 
         if not test:
-            observation = torch.Tensor(observation).view(1, -1).to(device)
             output = self.model(observation)
             probability = output[0,0]
             if np.random.rand() < probability.item():
@@ -159,14 +173,13 @@ class Agent_PG(Agent):
             return action, output
         elif test:
             if type(self.last_frame) == type(None):
-                observation = prepro(observation)
-                self.last_frame = observation
+                self.last_frame = prepro(observation)
+                observation = torch.zeros_like(self.last_frame)
             else:
                 o = prepro(observation)
                 observation = o - self.last_frame
                 self.last_frame = o
-            observation = torch.Tensor(observation).view(1, -1).to(device)
-            output = self.model(observation)
+            output = self.model(observation.view(1, -1))
             probability = output[0,0]
             if np.random.rand() < probability.item():
                 action = 3

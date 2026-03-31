@@ -1,11 +1,11 @@
 gym==0.10.5
 atari-py==0.1.1
-pyglet==1.5.27
-numpy
+pyglet
+numpy<2.0
 scipy
 matplotlib
 scikit-image
-opencv-python==4.5.5.64
-torch==1.5.0
-torchvision==0.6.0
-PyQt5==5.9.2
+opencv-python
+torch
+torchvision
+PyQt5
