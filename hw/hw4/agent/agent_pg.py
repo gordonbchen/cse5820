@@ -139,10 +139,12 @@ class Agent_PG(Agent):
             loss.backward()
             self.optimizer.step()
 
+            # Log.
             dt = time.time() - t0
             total_time += dt
             rem_time = ((N_EPISODES - episode) - 1) * total_time / ((episode + 1) * 60)
-            print(f"{episode}: reward={total_reward} steps={len(log_probs)} dt={dt:.3f} rem_time={rem_time:.3f}")
+            print(f"{episode}: reward={total_reward} steps={len(log_probs)} loss={loss.item():.5f}", end=" ")
+            print(f"dt={dt:.3f} rem_time={rem_time:.3f}")
 
         # TODO: remove plot.
         import matplotlib.pyplot as plt
