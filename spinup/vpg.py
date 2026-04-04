@@ -60,7 +60,6 @@ dones = torch.zeros((N_STEPS+1, N_ENVS), dtype=torch.float32, device=DEVICE)
 actions = torch.zeros((N_STEPS, N_ENVS), dtype=torch.int64, device=DEVICE)
 rewards = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
 advantages = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
-value_targets = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
 
 obs, _ = envs.reset()
 obs = torch.tensor(obs, dtype=torch.float32, device=DEVICE)
@@ -90,16 +89,12 @@ for epoch in range(N_EPOCHS):
     with torch.no_grad():
         values = critic(obss).squeeze(-1)
         gae_accum = torch.zeros(N_ENVS, dtype=torch.float32, device=DEVICE)
-        reward_accum = values[-1]
         for t in reversed(range(N_STEPS)):
             # If not done, bootstrap w/ next value.
             next_nonterminal = 1 - dones[t+1]
             delta = rewards[t] + DISCOUNT_GAMMA * values[t+1] * next_nonterminal - values[t]
             advantages[t] = gae_accum = delta + DISCOUNT_GAMMA * GAE_LAMBDA * gae_accum * next_nonterminal
-            value_targets[t] = reward_accum = rewards[t] + DISCOUNT_GAMMA * reward_accum * next_nonterminal
-
-        # TODO: GAE value targets vs RTG.
-        # value_targets = advantages + values[:-1]
+        value_targets = advantages + values[:-1]
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
     # Optimize policy.
