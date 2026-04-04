@@ -20,14 +20,19 @@ N_ENVS = 1
 N_EPOCHS = 256
 N_STEPS = 1024
 DEVICE = "cpu"
-POLICY_LR = 3e-3
-CRITIC_LR = 3e-3
-CRITIC_OPTIM_STEPS = 4
-DISCOUNT_GAMMA = 0.99
-GAE_LAMBDA = 0.95
-HIDDEN_SIZE = 32
 LOG_STEPS = 10
 VAL_STEPS = 1024
+
+HIDDEN_SIZE = 32
+
+POLICY_LR = 1e-3
+POLICY_OPTIM_STEPS = 2
+CRITIC_LR = 1e-3
+CRITIC_OPTIM_STEPS = 4
+
+DISCOUNT_GAMMA = 0.99
+GAE_LAMBDA = 0.95
+CLIP_EPS = 0.2
 
 
 # Cartpole: http://gymnasium.farama.org/environments/classic_control/cart_pole/
@@ -60,6 +65,7 @@ dones = torch.zeros((N_STEPS+1, N_ENVS), dtype=torch.float32, device=DEVICE)
 actions = torch.zeros((N_STEPS, N_ENVS), dtype=torch.int64, device=DEVICE)
 rewards = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
 advantages = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
+old_log_probs = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
 
 obs, _ = envs.reset()
 obs = torch.tensor(obs, dtype=torch.float32, device=DEVICE)
@@ -75,6 +81,7 @@ for epoch in range(N_EPOCHS):
             logits = policy(obs)
         action_dist = Categorical(logits=logits)
         action = action_dist.sample()
+        old_log_probs[t] = action_dist.log_prob(action)
         actions[t] = action
 
         obs, reward, terminated, truncated, _ = envs.step(action.cpu().numpy())
@@ -98,11 +105,13 @@ for epoch in range(N_EPOCHS):
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
     # Optimize policy.
-    log_probs = Categorical(logits=policy(obss[:-1])).log_prob(actions)
-    policy_loss = (-log_probs * advantages).mean()
-    policy_optim.zero_grad(set_to_none=True)
-    policy_loss.backward()
-    policy_optim.step()
+    for _ in range(POLICY_OPTIM_STEPS):
+        log_probs = Categorical(logits=policy(obss[:-1])).log_prob(actions)
+        ratios = (log_probs - old_log_probs).exp()
+        policy_loss = -(torch.minimum(ratios * advantages, ratios.clip(1-CLIP_EPS, 1+CLIP_EPS) * advantages)).mean()
+        policy_optim.zero_grad(set_to_none=True)
+        policy_loss.backward()
+        policy_optim.step()
 
     # Optimize critic.
     for _ in range(CRITIC_OPTIM_STEPS):
@@ -146,3 +155,4 @@ for epoch in range(N_EPOCHS):
         log.add_scalar("full_episodes", full_episodes, epoch)
         log.add_scalar("loss/policy", policy_loss.item(), epoch)
         log.add_scalar("loss/critic", critic_loss.item(), epoch)
+log.close()
