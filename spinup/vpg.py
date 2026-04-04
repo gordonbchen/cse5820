@@ -16,9 +16,9 @@ def build_mlp(sizes: list[int]):
 
 
 # Hyperparam.
-N_ENVS = 64
-N_EPOCHS = 512
-N_STEPS = 512
+N_ENVS = 1
+N_EPOCHS = 256
+N_STEPS = 1024
 DEVICE = "cpu"
 POLICY_LR = 3e-3
 CRITIC_LR = 3e-3
@@ -26,6 +26,8 @@ CRITIC_OPTIM_STEPS = 4
 DISCOUNT_GAMMA = 0.99
 GAE_LAMBDA = 0.95
 HIDDEN_SIZE = 32
+LOG_STEPS = 10
+VAL_STEPS = 1024
 
 
 # Cartpole: http://gymnasium.farama.org/environments/classic_control/cart_pole/
@@ -58,6 +60,7 @@ dones = torch.zeros((N_STEPS+1, N_ENVS), dtype=torch.float32, device=DEVICE)
 actions = torch.zeros((N_STEPS, N_ENVS), dtype=torch.int64, device=DEVICE)
 rewards = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
 advantages = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
+value_targets = torch.zeros((N_STEPS, N_ENVS), dtype=torch.float32, device=DEVICE)
 
 obs, _ = envs.reset()
 obs = torch.tensor(obs, dtype=torch.float32, device=DEVICE)
@@ -87,13 +90,16 @@ for epoch in range(N_EPOCHS):
     with torch.no_grad():
         values = critic(obss).squeeze(-1)
         gae_accum = torch.zeros(N_ENVS, dtype=torch.float32, device=DEVICE)
+        reward_accum = values[-1]
         for t in reversed(range(N_STEPS)):
             # If not done, bootstrap w/ next value.
             next_nonterminal = 1 - dones[t+1]
             delta = rewards[t] + DISCOUNT_GAMMA * values[t+1] * next_nonterminal - values[t]
             advantages[t] = gae_accum = delta + DISCOUNT_GAMMA * GAE_LAMBDA * gae_accum * next_nonterminal
+            value_targets[t] = reward_accum = rewards[t] + DISCOUNT_GAMMA * reward_accum * next_nonterminal
 
-        value_targets = advantages + values[:-1]
+        # TODO: GAE value targets vs RTG.
+        # value_targets = advantages + values[:-1]
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
     # Optimize policy.
@@ -111,17 +117,37 @@ for epoch in range(N_EPOCHS):
         critic_optim.step()
 
     # Log.
-    full_reward_sum = 0
-    cum_rewards = torch.zeros(N_ENVS, dtype=torch.float32, device=DEVICE)
-    for t in range(N_STEPS):
-        cum_rewards += rewards[t]
-        full_reward_sum += cum_rewards.dot(dones[t+1]).item()
-        cum_rewards *= 1 - dones[t+1]
-    full_episodes = dones[1:].sum().item()
-    full_reward_mean = full_reward_sum / full_episodes
+    if (epoch % LOG_STEPS == 0) or (epoch == N_EPOCHS - 1): 
+        policy.eval()
+        total_rewards = 0
+        cum_reward = torch.zeros(N_ENVS, dtype=torch.float32, device=DEVICE)
+        full_episodes = 0
 
-    print(f"epoch={epoch} mean_reward={full_reward_mean}")
-    log.add_scalar("mean_reward", full_reward_mean, epoch)
-    log.add_scalar("full_episodes", full_episodes, epoch)
-    log.add_scalar("loss/policy", policy_loss.item(), epoch)
-    log.add_scalar("loss/critic", critic_loss.item(), epoch)
+        obs, _ = envs.reset()
+        done.zero_()
+        for _ in range(VAL_STEPS):
+            obs = torch.tensor(obs, dtype=torch.float32, device=DEVICE)
+            with torch.no_grad():
+                action = policy(obs).argmax(dim=-1)
+
+            obs, reward, terminated, truncated, _ = envs.step(action.cpu().numpy())
+            reward = torch.tensor(reward, dtype=torch.float32, device=DEVICE)
+            done = torch.tensor(terminated | truncated, dtype=torch.float32, device=DEVICE)
+
+            cum_reward += reward
+            total_rewards += (cum_reward @ done).item()
+            cum_reward *= 1-done
+            full_episodes += done.sum().item()
+
+        # Reset for training.
+        policy.train()
+        obs, _ = envs.reset()
+        obs = torch.tensor(obs, dtype=torch.float32, device=DEVICE)
+        done.zero_()
+
+        full_reward_mean = total_rewards / full_episodes
+        print(f"epoch={epoch} mean_reward={full_reward_mean}")
+        log.add_scalar("mean_reward", full_reward_mean, epoch)
+        log.add_scalar("full_episodes", full_episodes, epoch)
+        log.add_scalar("loss/policy", policy_loss.item(), epoch)
+        log.add_scalar("loss/critic", critic_loss.item(), epoch)
