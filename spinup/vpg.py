@@ -146,3 +146,4 @@ for epoch in range(N_EPOCHS):
         log.add_scalar("full_episodes", full_episodes, epoch)
         log.add_scalar("loss/policy", policy_loss.item(), epoch)
         log.add_scalar("loss/critic", critic_loss.item(), epoch)
+log.close()
