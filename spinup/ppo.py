@@ -1,4 +1,4 @@
-"""PPO, heavily inspired by PufferLib."""
+"""PPO, heavily inspired by PufferLib and CleanRL."""
 from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
@@ -7,10 +7,9 @@ from torch.optim import Adam
 from torch.distributions import Categorical
 from torch.utils.tensorboard import SummaryWriter
 import gymnasium as gym
-import ale_py
-from stable_baselines3.common.atari_wrappers import (FireResetEnv, ClipRewardEnv, NoopResetEnv)
 import numpy as np
 from cli_params import CLIParams
+import envpool
 
 torch.set_float32_matmul_precision("high")
 
@@ -22,7 +21,7 @@ class HyperParams(CLIParams):
     n_envs: int = 16
     device: str = "cuda"
 
-    lr: float = 1e-3
+    lr: float = 3e-4
     ppo_epochs: int = 4
     minibatch_size: int = 256
 
@@ -57,7 +56,7 @@ class Agent(nn.Module):
             nn.ReLU(),
             layer_init(nn.Conv2d(32, 64, 4, stride=2, padding=1)),
             nn.ReLU(),
-            layer_init(nn.Conv2d(64, 64, 3, stride=1, padding=1)),
+            layer_init(nn.Conv2d(64, 64, 3, stride=1)),
             nn.ReLU(),
             nn.Flatten(),
             layer_init(nn.Linear(64 * 8 * 8, 64)),
@@ -69,45 +68,54 @@ class Agent(nn.Module):
         self.critic = layer_init(nn.Linear(64, 1), gain=1)
 
     def forward(self, obs):
+        obs = obs / 255.0
         z = self.net(obs)
         return self.policy(z), self.critic(z).squeeze(-1)
     
     def get_values(self, obs):
+        obs = obs / 255.0
         return self.critic(self.net(obs)).squeeze(-1)
     
     def get_action_logits(self, obs):
+        obs = obs / 255.0
         return self.policy(self.net(obs))
 
 
-LUMINANCE_VECTOR = torch.tensor([0.2126, 0.7152, 0.0722], dtype=torch.float32, device=HP.device)
-OBS_SHAPE = (HP.n_frame_stack, 64, 64)
+class EnvPoolEpisodeStats(gym.Wrapper):
+    def __init__(self, env, n_envs: int):
+        super().__init__(env)
+        self.episode_returns = np.zeros(n_envs, dtype=np.float32)
+        self.episode_lengths = np.zeros(n_envs, dtype=np.int32)
 
-def preprocess_obs(imgs: np.ndarray | torch.Tensor) -> torch.Tensor:
-    if isinstance(imgs, np.ndarray):
-        imgs = torch.tensor(imgs, dtype=torch.float32, device=HP.device)
-    imgs = (imgs[:, :, 34:194] / 255.0) @ LUMINANCE_VECTOR
-    imgs = F.interpolate(imgs, size=OBS_SHAPE[1:], mode="bilinear")
-    # import matplotlib.pyplot as plt
-    # plt.imshow(imgs[0][0].cpu().numpy(), cmap="gray")
-    # plt.show()
-    return imgs
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self.episode_returns[:] = 0
+        self.episode_lengths[:] = 0
+        return obs, info
 
+    def step(self, actions):
+        obs, rewards, terminated, truncated, info = self.env.step(actions)
+        dones = np.logical_or(terminated, truncated)
 
-def make_env():
-    env = gym.make("ALE/Pong-v5")
-    env = NoopResetEnv(env, noop_max=10)
-    env = FireResetEnv(env)
-    env = ClipRewardEnv(env)
-    return gym.wrappers.FrameStackObservation(env, HP.n_frame_stack)
+        self.episode_returns += rewards
+        self.episode_lengths += 1
 
+        if dones.any():
+            info["stats"] = {}
+            info["stats"]["done_mask"] = dones
+
+            # Only meaningful where dones == True
+            info["stats"]["returns"] = self.episode_returns.copy()
+            info["stats"]["lens"] = self.episode_lengths.copy()
+
+            self.episode_returns[dones] = 0.0
+            self.episode_lengths[dones] = 0
+
+        return obs, rewards, terminated, truncated, info
 
 # Create envs.
-gym.register_envs(ale_py)
-envs = gym.vector.AsyncVectorEnv(
-   [make_env for _ in range(HP.n_envs)],
-    autoreset_mode=gym.vector.AutoresetMode.SAME_STEP
-)
-envs = gym.wrappers.vector.RecordEpisodeStatistics(envs, buffer_length=32)
+envs = envpool.make_gymnasium("Pong-v5", num_envs=HP.n_envs)
+envs = EnvPoolEpisodeStats(envs, n_envs=HP.n_envs)
 
 # Create agent.
 agent = Agent().to(device=HP.device)
@@ -115,6 +123,7 @@ agent.compile()
 optim = Adam(agent.parameters(), lr=HP.lr, fused=True)
 
 # Storage buffers.
+OBS_SHAPE = (HP.n_frame_stack, 84, 84)
 obss = torch.zeros((HP.n_steps+1, HP.n_envs) + OBS_SHAPE, dtype=torch.float32, device=HP.device)
 dones = torch.zeros((HP.n_steps+1, HP.n_envs), dtype=torch.float32, device=HP.device)
 actions = torch.zeros((HP.n_steps, HP.n_envs), dtype=torch.int64, device=HP.device)
@@ -124,7 +133,7 @@ old_log_probs = torch.zeros((HP.n_steps, HP.n_envs), dtype=torch.float32, device
 values = torch.zeros((HP.n_steps+1, HP.n_envs), dtype=torch.float32, device=HP.device)
 
 obs, _ = envs.reset()
-obs = preprocess_obs(obs)
+obs = torch.tensor(obs, dtype=torch.float32, device=HP.device)
 done = torch.zeros(HP.n_envs, dtype=torch.float32, device=HP.device)
 
 log = SummaryWriter(log_dir=HP.output_dir)
@@ -137,6 +146,9 @@ for epoch in range(HP.n_epochs):
     obss[0] = obs
     dones[0] = done
     for t in range(HP.n_steps):
+        # import matplotlib.pyplot as plt
+        # plt.imshow(obs[0][0].cpu().numpy(), cmap="gray")
+        # plt.show()
         with torch.no_grad():
             logits, value = agent(obs)
         action_dist = Categorical(logits=logits)
@@ -149,15 +161,15 @@ for epoch in range(HP.n_epochs):
         obs, reward, terminated, truncated, info = envs.step(agent.ACTION_MAP[action.cpu()].numpy())
         rewards[t] = torch.tensor(reward, dtype=torch.float32, device=HP.device)
 
-        obs = preprocess_obs(obs)
+        obs = torch.tensor(obs, dtype=torch.float32, device=HP.device)
         done = torch.tensor(terminated | truncated, dtype=torch.float32, device=HP.device)
         obss[t+1] = obs
         dones[t+1] = done
 
-        if "episode" in info.keys():
-            done_mask = info["_episode"]
-            total_reward += info["episode"]["r"][done_mask].sum()
-            episode_length += info["episode"]["l"][done_mask].sum()
+        if "stats" in info.keys():
+            done_mask = info["stats"]["done_mask"]
+            total_reward += info["stats"]["returns"][done_mask].sum()
+            episode_length += info["stats"]["lens"][done_mask].sum()
             n_episodes += done_mask.sum()
 
     # GAE.
