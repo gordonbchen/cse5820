@@ -103,7 +103,7 @@ def make_env():
 
 # Create envs.
 gym.register_envs(ale_py)
-envs = gym.vector.SyncVectorEnv(
+envs = gym.vector.AsyncVectorEnv(
    [make_env for _ in range(HP.n_envs)],
     autoreset_mode=gym.vector.AutoresetMode.SAME_STEP
 )
