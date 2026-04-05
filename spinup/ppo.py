@@ -17,8 +17,8 @@ torch.set_float32_matmul_precision("high")
 
 @dataclass
 class HyperParams(CLIParams):
-    n_epochs: int = 10_000
-    n_steps: int = 256
+    n_epochs: int = 1000
+    n_steps: int = 512
     n_envs: int = 16
     device: str = "cuda"
 
