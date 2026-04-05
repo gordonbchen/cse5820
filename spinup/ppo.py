@@ -17,8 +17,8 @@ torch.set_float32_matmul_precision("high")
 
 @dataclass
 class HyperParams(CLIParams):
-    n_epochs: int = 1000
-    n_steps: int = 512
+    n_epochs: int = 5000
+    n_steps: int = 128
     n_envs: int = 16
     device: str = "cuda"
 
@@ -28,7 +28,7 @@ class HyperParams(CLIParams):
 
     discount_gamma: float = 0.99
     gae_lambda: float = 0.95
-    clip_eps: float = 0.1
+    clip_eps: float = 0.2
     critic_loss_coeff: float = 0.5
     entropy_coeff: float = 0.01
     max_grad_norm: float = 0.5
@@ -53,14 +53,14 @@ class Agent(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            layer_init(nn.Conv2d(HP.n_frame_stack, 16, 8, stride=4, padding=2)),
+            layer_init(nn.Conv2d(HP.n_frame_stack, 32, 8, stride=4, padding=2)),
             nn.ReLU(),
-            layer_init(nn.Conv2d(16, 32, 4, stride=2, padding=1)),
+            layer_init(nn.Conv2d(32, 64, 4, stride=2, padding=1)),
             nn.ReLU(),
-            layer_init(nn.Conv2d(32, 64, 3, stride=2, padding=1)),
+            layer_init(nn.Conv2d(64, 64, 3, stride=1, padding=1)),
             nn.ReLU(),
             nn.Flatten(),
-            layer_init(nn.Linear(64 * 4 * 4, 64)),
+            layer_init(nn.Linear(64 * 8 * 8, 64)),
             nn.ReLU()
         )
         # 0 = NOOP, 1 = LEFT, 2 = RIGHT.
