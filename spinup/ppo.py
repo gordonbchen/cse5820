@@ -212,7 +212,7 @@ for epoch in range(HP.n_epochs):
             policy_loss = -torch.minimum(pg1, pg2).mean()
 
             # TODO: value clipping.
-            critic_loss = F.mse_loss(value, b_value_targets[batch_idxs])
+            critic_loss = 0.5 * F.mse_loss(value, b_value_targets[batch_idxs])
 
             loss = policy_loss + (HP.critic_loss_coeff * critic_loss) - (HP.entropy_coeff * entropy)
 
